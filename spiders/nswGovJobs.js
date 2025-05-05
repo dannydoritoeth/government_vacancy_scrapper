@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import chalk from "chalk";
 import process from "process";
+import fetch from "node-fetch";
 
 /**
  * @description Scrapes jobs from NSW Government jobs website
@@ -22,6 +23,12 @@ export class NSWJobSpider {
     this.page = null;
     this.pageSize = 25; // Default page size
     this.loadCache();
+    
+    // Ensure the files directory exists
+    const filesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "database", "jobs", "files");
+    if (!fs.existsSync(filesDir)) {
+      fs.mkdirSync(filesDir, { recursive: true });
+    }
   }
 
   /**
@@ -357,6 +364,71 @@ export class NSWJobSpider {
     return jobs;
   }
 
+  /**
+   * @description Downloads a document from a URL and saves it
+   * @param {string} url - The URL of the document
+   * @param {string} jobId - The job ID
+   * @param {string} docType - The type of document (e.g., 'role-description', 'statement-of-works')
+   * @returns {Promise<string>} The filename of the downloaded document
+   */
+  async #downloadDocument(url, jobId, docType) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to download document: ${response.statusText}`);
+      
+      const contentType = response.headers.get('content-type');
+      const extension = contentType?.includes('pdf') ? 'pdf' : 'doc';
+      const filename = `${jobId}-${docType}.${extension}`;
+      const filePath = path.join(
+        path.dirname(fileURLToPath(import.meta.url)), 
+        "..", 
+        "database",
+        "jobs",
+        "files",
+        filename
+      );
+      
+      const buffer = await response.arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(buffer));
+      console.log(chalk.green(`Downloaded document: ${filename}`));
+      
+      return filename;
+    } catch (error) {
+      console.log(chalk.yellow(`Error downloading document from ${url}: ${error.message}`));
+      return null;
+    }
+  }
+
+  /**
+   * @description Extracts document URLs from the job description
+   * @param {string} description - The job description HTML
+   * @returns {Array<Object>} Array of document objects with url and type
+   */
+  #extractDocumentUrls(description) {
+    const roleDescRegex = /Role Description:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi;
+    const statementRegex = /Statement of Works:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi;
+    const documents = [];
+    
+    let match;
+    while ((match = roleDescRegex.exec(description)) !== null) {
+      documents.push({
+        url: match[1],
+        type: 'role-description',
+        title: match[2].trim()
+      });
+    }
+    
+    while ((match = statementRegex.exec(description)) !== null) {
+      documents.push({
+        url: match[1],
+        type: 'statement-of-works',
+        title: match[2].trim()
+      });
+    }
+    
+    return documents;
+  }
+
   async #scrapeJobDetails(jobUrl, jobId) {
     // Check cache first
     const cachedDetails = this.#checkCache(jobId);
@@ -447,6 +519,25 @@ export class NSWJobSpider {
           }
         };
       });
+
+      // Extract and download documents
+      const documents = this.#extractDocumentUrls(jobDetails.description);
+      const downloadedDocs = [];
+      
+      for (const doc of documents) {
+        const filename = await this.#downloadDocument(doc.url, jobId, doc.type);
+        if (filename) {
+          downloadedDocs.push({
+            filename,
+            type: doc.type,
+            title: doc.title,
+            url: doc.url
+          });
+        }
+      }
+      
+      // Add downloaded documents to job details
+      jobDetails.documents = downloadedDocs;
 
       // Close the detail page
       await detailPage.close();
