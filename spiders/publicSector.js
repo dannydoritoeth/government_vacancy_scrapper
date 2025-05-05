@@ -13,8 +13,7 @@ import chalk from "chalk";
 export class PublicJobSpider {
   #name = "public jobs";
   #allowedDomains = [
-    "https://www.govpage.co.za/",
-    "https://www.govpage.co.za/latest-govpage-updates",
+    "https://iworkfor.nsw.gov.au/jobs/all-keywords/all-agencies/department-of-climate-change,-energy,-the-environment-and-water-/all-categories/all-locations/all-worktypes?agenciesid=9116&sortby=RelevanceDesc&pagesize=100"
   ];
   constructor() {
     this.browser = null;
