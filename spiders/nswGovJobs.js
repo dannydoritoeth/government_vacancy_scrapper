@@ -405,25 +405,53 @@ export class NSWJobSpider {
    * @returns {Array<Object>} Array of document objects with url and type
    */
   #extractDocumentUrls(description) {
-    const roleDescRegex = /Role Description:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi;
-    const statementRegex = /Statement of Works:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi;
+    const patterns = [
+      // Pattern 1: "Role Description: <link>"
+      /Role Description:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi,
+      // Pattern 2: "To view the Role Description: <link>"
+      /To view the Role Description:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi,
+      // Pattern 3: "read the full Role Description: <link>"
+      /read the full Role Description:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi,
+      // Pattern 4: "Statement of Works: <link>"
+      /Statement of Works:\s*<[^>]*?href="([^"]+)"[^>]*?>([^<]+)/gi,
+      // Pattern 5: Any link to dpie.nsw.gov.au with ?a=
+      /<a[^>]*?href="([^"]*?dpie\.nsw\.gov\.au\/\?a=[^"]*)"[^>]*>([^<]+)<\/a>/gi,
+      // Pattern 6: Any link to dpie.nsw.gov.au word docs
+      /<a[^>]*?href="([^"]*?dpie\.nsw\.gov\.au\/__data\/assets\/word_doc\/[^"]*)"[^>]*>([^<]+)<\/a>/gi,
+      // Pattern 7: Any link following "view the" or "read the" within same paragraph
+      /<p>[^<]*(?:view|read)\s+the[^<]*<a[^>]*?href="([^"]+)"[^>]*?>([^<]+)<\/a>/gi,
+      // Pattern 8: Any link to dpie.nsw.gov.au in a paragraph containing "Role Description"
+      /<p>[^<]*Role Description[^<]*<a[^>]*?href="([^"]+)"[^>]*?>([^<]+)<\/a>/gi,
+      // Pattern 9: Any link immediately following "Role Description"
+      /Role Description[^<]*<a[^>]*?href="([^"]+)"[^>]*?>([^<]+)<\/a>/gi
+    ];
+    
     const documents = [];
+    const seenUrls = new Set(); // To avoid duplicates
     
-    let match;
-    while ((match = roleDescRegex.exec(description)) !== null) {
-      documents.push({
-        url: match[1],
-        type: 'role-description',
-        title: match[2].trim()
-      });
-    }
-    
-    while ((match = statementRegex.exec(description)) !== null) {
-      documents.push({
-        url: match[1],
-        type: 'statement-of-works',
-        title: match[2].trim()
-      });
+    for (const pattern of patterns) {
+      let match;
+      while ((match = pattern.exec(description)) !== null) {
+        const url = match[1];
+        // Skip if we've already found this URL
+        if (seenUrls.has(url)) continue;
+        
+        seenUrls.add(url);
+        
+        // Determine document type
+        let type = 'role-description';
+        if (pattern.source.toLowerCase().includes('statement')) {
+          type = 'statement-of-works';
+        } else if (url.includes('word_doc')) {
+          type = 'document';
+        }
+        
+        documents.push({
+          url,
+          type,
+          title: match[2]?.trim() || match[1]?.trim() || 'Document'
+        });
+      }
     }
     
     return documents;
