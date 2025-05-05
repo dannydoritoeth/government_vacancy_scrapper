@@ -116,7 +116,9 @@ export class NSWJobSpider {
   #databasePath(filename, type = "jobs") {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    return path.join(__dirname, "..", "database", type, `${filename}.json`);
+    const dbPath = path.join(__dirname, "..", "database", type, `nswgov-${filename}.json`);
+    console.log(chalk.cyan(`Database path: ${dbPath}`));
+    return dbPath;
   }
 
   /**

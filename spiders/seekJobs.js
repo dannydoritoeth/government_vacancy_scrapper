@@ -65,9 +65,11 @@ export class SeekJobSpider {
   loadCache() {
     try {
       const cacheDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "database", "jobs");
+      console.log(chalk.yellow(`Cache directory: ${cacheDir}`));
       
       // Create directories if they don't exist
       if (!fs.existsSync(cacheDir)) {
+        console.log(chalk.yellow(`Creating cache directory: ${cacheDir}`));
         fs.mkdirSync(cacheDir, { recursive: true });
         return;
       }
@@ -165,8 +167,10 @@ export class SeekJobSpider {
    */
   #databasePath(filename, type = "jobs") {
     const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    return path.join(__dirname, "..", "database", type, `${filename}.json`);
+    const projectRoot = path.resolve(path.dirname(__filename), "..");
+    const dbPath = path.join(projectRoot, "database", type, `seek-${filename}.json`);
+    console.log(chalk.yellow(`Database path: ${dbPath}`));
+    return dbPath;
   }
 
   /**
@@ -260,40 +264,77 @@ export class SeekJobSpider {
             hasMoreJobs = false;
           } else {
             allJobs = [...allJobs, ...jobs];
+            
+            // Write data after each page
+            console.log(chalk.cyan('\nWriting current progress to file...'));
+            try {
+              const filePath = this.#databasePath(this.#date("date"));
+              const dirPath = path.dirname(filePath);
+              
+              // Ensure directory exists
+              if (!fs.existsSync(dirPath)) {
+                console.log(chalk.yellow(`Creating directory: ${dirPath}`));
+                fs.mkdirSync(dirPath, { recursive: true });
+              }
+              
+              const data = JSON.stringify({
+                metadata: {
+                  total_jobs: allJobs.length,
+                  expected_total_jobs: totalJobs,
+                  total_pages: currentPage,
+                  jobs_created: allJobs.length,
+                  jobs_skipped: 0,
+                  date_scraped: this.#date("timestamp"),
+                  is_complete: false
+                },
+                jobs: allJobs
+              }, null, 2);
+              
+              fs.writeFileSync(filePath, data);
+              console.log(chalk.green(`Progress saved - ${allJobs.length} jobs written to ${filePath}`));
+            } catch (error) {
+              console.error(chalk.red('Error writing file:'), error);
+            }
+            
             currentPage++;
           }
         }
 
-        // Log final statistics
-        console.log(chalk.cyan('\n----------------------------------------'));
-        console.log(chalk.cyan(`Total pages processed: ${currentPage - 1}`));
-        console.log(chalk.cyan(`Total jobs found: ${allJobs.length} / ${totalJobs}`));
-        console.log(chalk.green(`Jobs created/updated: ${allJobs.length}`));
-        console.log(chalk.yellow(`Jobs skipped: 0`));
-        console.log(chalk.cyan('----------------------------------------'));
-        
-        // Save the scraped data
-        fs.writeFile(
-          this.#databasePath(this.#date("date")),
-          JSON.stringify({
-            metadata: {
-              total_jobs: allJobs.length,
-              expected_total_jobs: totalJobs,
-              total_pages: currentPage - 1,
-              jobs_created: allJobs.length,
-              jobs_skipped: 0,
-              date_scraped: this.#date("timestamp")
-            },
-            jobs: allJobs
-          }, null, 2),
-          (error) => {
-            if (error) {
-              console.log(chalk.red(error.message));
-            } else {
-              console.log(chalk.green(`Jobs saved to database for ${this.#date("date")}`));
+        // Final save with complete flag
+        if (allJobs.length > 0) {
+          console.log(chalk.cyan('\nWriting final data to file...'));
+          try {
+            const filePath = this.#databasePath(this.#date("date"));
+            const dirPath = path.dirname(filePath);
+            
+            // Ensure directory exists
+            if (!fs.existsSync(dirPath)) {
+              console.log(chalk.yellow(`Creating directory: ${dirPath}`));
+              fs.mkdirSync(dirPath, { recursive: true });
             }
+            
+            console.log(chalk.cyan(`Writing to: ${filePath}`));
+            fs.writeFileSync(
+              filePath,
+              JSON.stringify({
+                metadata: {
+                  total_jobs: allJobs.length,
+                  expected_total_jobs: totalJobs,
+                  total_pages: currentPage - 1,
+                  jobs_created: allJobs.length,
+                  jobs_skipped: 0,
+                  date_scraped: this.#date("timestamp"),
+                  is_complete: true
+                },
+                jobs: allJobs
+              }, null, 2)
+            );
+            console.log(chalk.green(`Final data saved - ${allJobs.length} total jobs written`));
+          } catch (error) {
+            console.log(chalk.red(`Error writing final file: ${error.message}`));
+            console.log(chalk.red(`Stack trace: ${error.stack}`));
           }
-        );
+        }
 
         await this.#terminate();
       }
